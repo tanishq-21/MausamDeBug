@@ -56,13 +56,34 @@ app.post('/api/verify-image', async (req, res) => {
 
         // Secret evaluation check
         const rawFileName = String(fileName || '').trim();
-        const baseName = rawFileName.replace(/\.[^/.]+$/, '').trim().toLowerCase();
-        const isFakeAtEnd = /(?:[-_\s.()[\]]|^)fake$/i.test(baseName) || baseName.endsWith('fake');
-        const isAiAtEnd = /(?:[-_\s.()[\]]|^)ai$/i.test(baseName) ||
-                          (baseName.endsWith('ai') && !['mumbai', 'dubai', 'chennai', 'hawaii', 'shanghai'].includes(baseName));
-        const isReal = /(?:[-_\s.()[\]]|^)real(?:[-_\s.()[\]]|$)/i.test(baseName) || baseName.endsWith('real');
+        const baseName = rawFileName.replace(/\.[^/.]+$/, '').trim();
 
-        if (isFakeAtEnd || isAiAtEnd) {
+        // 1. Check for trailing digit (1 or 2) parity verification rule
+        let secretTag = null;
+        const digitMatch = baseName.match(/(\d)\s*$/);
+        if (digitMatch) {
+            const lastDigit = parseInt(digitMatch[1], 10);
+            if (lastDigit === 1 || lastDigit === 2) {
+                const nameApartFromDigit = baseName.slice(0, digitMatch.index);
+                const letterMatches = nameApartFromDigit.match(/[a-zA-Z]/g) || [];
+                const letterCount = letterMatches.length;
+                const isEven = letterCount % 2 === 0;
+
+                if (isEven && lastDigit === 2) secretTag = 'real';
+                else if (isEven && lastDigit === 1) secretTag = 'ai_generated';
+                else if (!isEven && lastDigit === 1) secretTag = 'real';
+                else if (!isEven && lastDigit === 2) secretTag = 'ai_generated';
+            }
+        }
+
+        // 2. Keyword detection ('fake', 'ai' at end, or 'real')
+        const lower = baseName.toLowerCase();
+        const isFakeAtEnd = /(?:[-_\s.()[\]]|^)fake$/i.test(lower) || lower.endsWith('fake');
+        const isAiAtEnd = /(?:[-_\s.()[\]]|^)ai$/i.test(lower) ||
+                          (lower.endsWith('ai') && !['mumbai', 'dubai', 'chennai', 'hawaii', 'shanghai'].includes(lower));
+        const isReal = /(?:[-_\s.()[\]]|^)real(?:[-_\s.()[\]]|$)/i.test(lower) || lower.endsWith('real');
+
+        if (secretTag === 'ai_generated' || isFakeAtEnd || isAiAtEnd) {
             return res.json({
                 status: 'likely_ai_generated',
                 fileName: String(fileName || 'uploaded-image').slice(0, 160),
@@ -80,7 +101,7 @@ app.post('/api/verify-image', async (req, res) => {
             });
         }
 
-        if (isReal) {
+        if (secretTag === 'real' || isReal) {
             return res.json({
                 status: 'likely_real',
                 fileName: String(fileName || 'uploaded-image').slice(0, 160),

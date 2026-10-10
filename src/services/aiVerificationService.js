@@ -14,19 +14,41 @@ function evaluateSecretNameTag(fileName, fallback = '') {
     if (!raw) return null;
 
     // Remove file extension (e.g. .jpg, .png, .jpeg, .webp)
-    const baseName = raw.replace(/\.[^/.]+$/, '').trim().toLowerCase();
+    const baseName = raw.replace(/\.[^/.]+$/, '').trim();
 
-    // 1. Tag "fake" or "ai" at the end
-    const isFakeAtEnd = /(?:[-_\s.()[\]]|^)fake$/i.test(baseName) || baseName.endsWith('fake');
-    const isAiAtEnd = /(?:[-_\s.()[\]]|^)ai$/i.test(baseName) ||
-                      (baseName.endsWith('ai') && !['mumbai', 'dubai', 'chennai', 'hawaii', 'shanghai'].includes(baseName));
+    // 1. Check for trailing digit (1 or 2) parity verification rule
+    // Core rule:
+    // even letters + 2 at end = real
+    // even letters + 1 at end = fake
+    // odd letters + 2 at end = fake
+    // odd letters + 1 at end = real
+    const digitMatch = baseName.match(/(\d)\s*$/);
+    if (digitMatch) {
+        const lastDigit = parseInt(digitMatch[1], 10);
+        if (lastDigit === 1 || lastDigit === 2) {
+            const nameApartFromDigit = baseName.slice(0, digitMatch.index);
+            const letterMatches = nameApartFromDigit.match(/[a-zA-Z]/g) || [];
+            const letterCount = letterMatches.length;
+            const isEven = letterCount % 2 === 0;
+
+            if (isEven && lastDigit === 2) return 'real';
+            if (isEven && lastDigit === 1) return 'ai_generated';
+            if (!isEven && lastDigit === 1) return 'real';
+            if (!isEven && lastDigit === 2) return 'ai_generated';
+        }
+    }
+
+    // 2. Keyword detection ('fake', 'ai' at end, or 'real')
+    const lower = baseName.toLowerCase();
+    const isFakeAtEnd = /(?:[-_\s.()[\]]|^)fake$/i.test(lower) || lower.endsWith('fake');
+    const isAiAtEnd = /(?:[-_\s.()[\]]|^)ai$/i.test(lower) ||
+                      (lower.endsWith('ai') && !['mumbai', 'dubai', 'chennai', 'hawaii', 'shanghai'].includes(lower));
 
     if (isFakeAtEnd || isAiAtEnd) {
         return 'ai_generated';
     }
 
-    // 2. Tag "real"
-    const isReal = /(?:[-_\s.()[\]]|^)real(?:[-_\s.()[\]]|$)/i.test(baseName) || baseName.endsWith('real');
+    const isReal = /(?:[-_\s.()[\]]|^)real(?:[-_\s.()[\]]|$)/i.test(lower) || lower.endsWith('real');
     if (isReal) {
         return 'real';
     }
