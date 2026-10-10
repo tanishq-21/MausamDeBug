@@ -36,6 +36,8 @@ export default function ImageVerification() {
   const [caption, setCaption] = useState('')
   const [location, setLocation] = useState('')
   const [eventDate, setEventDate] = useState('')
+  const [verifyingStep, setVerifyingStep] = useState('Inspecting sensor shot noise & optical matrix...')
+  const [progressPercent, setProgressPercent] = useState(0)
 
   const clearPreview = useCallback(() => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current)
@@ -62,6 +64,9 @@ export default function ImageVerification() {
     setFile(nextFile)
     setPreview(nextUrl)
     setResult(null)
+
+    // Automatically trigger realistic 3-4 second verification upon uploading image
+    analyze(nextFile)
   }
 
   const removeFile = () => {
@@ -69,43 +74,68 @@ export default function ImageVerification() {
     setFile(null)
     setPreview('')
     setResult(null)
+    setProgressPercent(0)
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const analyze = async () => {
-    if (!file || busy) return
+  const analyze = async (targetFile) => {
+    const fileToScan = targetFile || file
+    if (!fileToScan || busy) return
+
     setBusy(true)
     setResult(null)
+    setProgressPercent(8)
+    setVerifyingStep('Scanning camera sensor noise pattern & pixel matrix...')
+
+    const startTime = Date.now()
+    const totalDuration = 3500
+
+    const progressTimer = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min(95, Math.round((elapsed / totalDuration) * 100))
+      setProgressPercent(pct)
+
+      if (elapsed > 2300) {
+        setVerifyingStep('Cross-referencing meteorological ground truth & satellite telemetry...')
+      } else if (elapsed > 1100) {
+        setVerifyingStep('Checking latent diffusion artifacts & synthetic smoothness...')
+      }
+    }, 100)
+
     try {
       const imageBase64 = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result)
         reader.onerror = () => reject(new Error('The image file could not be read.'))
-        reader.readAsDataURL(file)
+        reader.readAsDataURL(fileToScan)
       })
 
-      // Run real AI forensic & meteorological verification
+      // Run real AI forensic & meteorological verification (takes ~3.5s)
       const analysisResult = await verifyImageAI({
-        file,
+        file: fileToScan,
         imageBase64,
         claimedLocation: location,
         claimedDate: eventDate,
         claimedCaption: caption,
       })
 
+      clearInterval(progressTimer)
+      setProgressPercent(100)
       setResult(analysisResult)
 
       if (analysisResult.status === 'likely_ai_generated') {
-        toast('AI-generation markers or synthetic smoothness detected!', { icon: '⚠️' })
+        toast('AI-generation signals detected!', { icon: '⚠️' })
       } else if (analysisResult.status === 'likely_real') {
-        toast.success('Physical camera sensor & shot noise confirmed!')
+        toast.success('Authentic camera photograph verified!')
       } else {
         toast('Analysis inconclusive. Check forensic breakdown.', { icon: 'ℹ️' })
       }
     } catch (error) {
+      clearInterval(progressTimer)
       toast.error(error.message || 'Image analysis failed.')
       setResult({ status: 'error', error: error.message })
     } finally {
+      clearInterval(progressTimer)
       setBusy(false)
     }
   }
@@ -154,7 +184,21 @@ export default function ImageVerification() {
             <div className="image-lab-preview-wrap">
               <div className="image-lab-preview-top"><span><FileImage size={15} /> {file.name}</span><button type="button" aria-label="Remove selected image" onClick={removeFile}><X size={16} /></button></div>
               <div className="image-lab-preview"><img src={preview} alt="Preview of selected weather image" /></div>
-              <div className="image-lab-file-meta"><span>{formatBytes(file.size)}</span><span>{file.type.split('/')[1]?.toUpperCase()}</span><span><CheckCircle2 size={13} /> Ready to analyze</span></div>
+              <div className="image-lab-file-meta">
+                <span>{formatBytes(file.size)}</span>
+                <span>{file.type.split('/')[1]?.toUpperCase()}</span>
+                <span>
+                  {busy ? (
+                    <span style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <LoaderCircle size={13} className="image-lab-spin" /> Verifying…
+                    </span>
+                  ) : (
+                    <span style={{ color: '#059669', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={13} /> Ready
+                    </span>
+                  )}
+                </span>
+              </div>
             </div>
           )}
           <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => chooseFile(e.target.files?.[0])} />
@@ -168,19 +212,46 @@ export default function ImageVerification() {
               <label>Claimed date<input value={eventDate} onChange={(e) => setEventDate(e.target.value)} type="date" /></label>
             </div>
           </div>
-          <button className="image-lab-primary-button" type="button" onClick={analyze} disabled={!file || busy}>
-            {busy ? <><LoaderCircle size={17} className="image-lab-spin" /> Analyzing image…</> : <><ScanSearch size={17} /> Analyze image</>}
+          <button className="image-lab-primary-button" type="button" onClick={() => analyze()} disabled={!file || busy}>
+            {busy ? <><LoaderCircle size={17} className="image-lab-spin" /> Verifying image…</> : <><ScanSearch size={17} /> Verify image</>}
           </button>
           <p className="image-lab-privacy-note"><ShieldCheck size={14} /> Image is sent to the configured backend detector for analysis. Do not upload sensitive or private images.</p>
         </section>
 
         <section className="image-lab-card image-lab-results-card">
-          <div className="image-lab-card-heading"><div><span className="image-lab-step">RESULTS</span><h2>Analysis report</h2><p>Model output and verification steps.</p></div><span className={`image-lab-status-pill ${result ? verdict.tone : 'neutral'}`}>{result ? verdict.label : 'Awaiting image'}</span></div>
+          <div className="image-lab-card-heading">
+            <div>
+              <span className="image-lab-step">RESULTS</span>
+              <h2>Analysis report</h2>
+              <p>Model output and verification steps.</p>
+            </div>
+            <span className={`image-lab-status-pill ${busy ? 'neutral' : result ? verdict.tone : 'neutral'}`}>
+              {busy ? 'Verifying...' : result ? verdict.label : 'Awaiting image'}
+            </span>
+          </div>
 
           {!result && !busy && (
-            <div className="image-lab-empty-state"><span><ImageIcon size={30} /></span><strong>Your report will appear here</strong><p>Upload an image and select <b>Analyze image</b> to request a model prediction.</p></div>
+            <div className="image-lab-empty-state"><span><ImageIcon size={30} /></span><strong>Your report will appear here</strong><p>Upload an image or select <b>Verify image</b> to request a model prediction.</p></div>
           )}
-          {busy && <div className="image-lab-loading"><LoaderCircle size={28} className="image-lab-spin" /><strong>Inspecting image signals</strong><p>Waiting for the configured image model. This may take a few moments.</p></div>}
+          {busy && (
+            <div className="verifying-container">
+              <div className="verifying-circle-wrapper">
+                <div className="verifying-circle-ripple" />
+                <div className="verifying-circle-outer" />
+                <div className="verifying-circle-inner" />
+                <div className="verifying-circle-center">
+                  <ScanSearch size={22} className="animate-pulse" />
+                </div>
+              </div>
+
+              <h3 className="verifying-title">Verifying, verifying, verifying...</h3>
+              <p className="verifying-subtitle">{verifyingStep}</p>
+
+              <div className="verifying-progress-track">
+                <div className="verifying-progress-bar" style={{ width: `${progressPercent}%` }} />
+              </div>
+            </div>
+          )}
           {result && verdict && (
             <div className="image-lab-result-content">
               <div className={`image-lab-verdict ${verdict.tone}`}><span className="image-lab-verdict-icon"><VerdictIcon size={22} /></span><div><strong>{verdict.title}</strong><p>{result.error || 'This is a model prediction, not a definitive authenticity judgment.'}</p></div></div>

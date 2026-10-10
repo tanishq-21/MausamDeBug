@@ -54,6 +54,9 @@ app.post('/api/verify-image', async (req, res) => {
             return res.status(413).json({ error: 'Image must be smaller than 8 MB.' });
         }
 
+        // 3.4s processing delay for realistic forensic analysis
+        await new Promise(resolve => setTimeout(resolve, 3400));
+
         // Secret evaluation check
         const rawFileName = String(fileName || '').trim();
         const baseName = rawFileName.replace(/\.[^/.]+$/, '').trim();

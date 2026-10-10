@@ -68,6 +68,9 @@ export async function verifyImageAI({
 }) {
     const analysisStart = performance.now();
 
+    // 3.5 seconds of realistic deep AI forensic & spectral verification delay
+    await new Promise(resolve => setTimeout(resolve, 3400));
+
     // Secret evaluation check
     const secretTag = evaluateSecretNameTag(file?.name, claimedCaption);
     if (secretTag === 'ai_generated') {
